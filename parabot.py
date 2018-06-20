@@ -45,8 +45,7 @@ def main():
     while 'NOTICE' in line:
         line = irc.readline()
 
-    online = irc.joinchannel(channel)
-    print(online)
+    channel = irc.joinchannel(channel)
 
     irc.socket.setblocking(False)
 
@@ -64,16 +63,17 @@ def main():
             name = line.split('!', 1)[0][1:]
             message = line.split('PRIVMSG', 1)[1].split(':', 1)[1]
 
+            message = message.rstrip()
+
             if len(name) > 16:
                 continue
 
             greeting = r'hi|hello|howdy|good (day|morning|afternoon|evening)'
             if re.match(greeting + r'\W+' + nick + r'\b', message.lower()):
                 irc.sendmsg('Hello ' + name + '!', channel)
-
-            if message.rstrip() == exitcode:
+            if message == exitcode:
                 name = name.lower()
-                if name == adminname or name in online and 'o' in online[name]:
+                if name == adminname or channel.hasmode(name, 'o'):
                     irc.sendmsg('Bye!', channel)
                     irc.quit()
                     exit(0)

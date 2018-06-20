@@ -3,7 +3,17 @@ from queue import Queue, Empty
 from time import sleep
 import logging
 
+# Map user prefix => mode
+prefixes = {
+    '~': 'q',
+    '&': 'a',
+    '@': 'o',
+    '%': 'h',
+    '+': 'v',
+}
 
+
+# TODO idea : list of channels as listeners
 class IRCManager:
     def __init__(self, nick, server, port):
         self.nick = nick
@@ -21,44 +31,15 @@ class IRCManager:
         self.socket.send(bytes('USER {0} {0} {0} {0}\r\n'.format(self.nick), 'UTF-8'))
 
     def joinchannel(self, channel):
-        self.socket.send(bytes('JOIN ' + channel + '\r\n', 'UTF-8'))
-
-        # prefix : mode
-        modes = {
-            '~': 'q',
-            '&': 'a',
-            '@': 'o',
-            '%': 'h',
-            '+': 'v',
-        }
-
-        # online user : user mode(s)
-        usermodes = {}
-
-        while True:
-            line = self.readline()
-
-            if 'End of /NAMES' in line:
-                break
-            tokens = line.split(' ', maxsplit=5)
-            if tokens[1] == '353':
-                users = tokens[5].strip(':').split(' ')
-
-                # Check for mode prefixes
-                for user in users:
-                    user = user.lower()
-                    if user[0] in modes:
-                        usermodes[user[1:]] = [modes[user[0]]]
-                    else:
-                        usermodes[user] = []
-
-        return usermodes
+        session = Channel(channel, self)
+        session.join()
+        return session
 
     def pong(self, msg):
-        self.socket.send(bytes('PONG :' + msg + '\r\n', 'UTF-8'))
+        self.socket.send(bytes('PONG :{0}\r\n'.format(msg), 'UTF-8'))
 
     def sendmsg(self, msg, target):
-        self.socket.send(bytes('PRIVMSG ' + target + ' :' + msg + '\r\n', 'UTF-8'))
+        self.socket.send(bytes('PRIVMSG {0} :{1}\r\n'.format(target, msg), 'UTF-8'))
 
     def updatelinequeue(self):
         try:
@@ -85,6 +66,65 @@ class IRCManager:
             return None
 
     def quit(self, message='Leaving'):
-        # Message doesn't seem to show
+        # NOTE: Message doesn't seem to work
         self.socket.send(bytes('QUIT :{0}\r\n'.format(message), 'UTF-8'))
-        self.socket.close()
+
+
+class Channel:
+    def __init__(self, channel, irc):
+        self.channel = channel
+        self.irc = irc
+        self.online = {}
+
+    def join(self):
+        self.irc.socket.send(bytes('JOIN ' + self.channel + '\r\n', 'UTF-8'))
+
+        line = ''
+        while 'End of /NAMES' not in line:
+            line = self.irc.readline()
+            tokens = line.split(' ', maxsplit=5)
+
+            if tokens[1] == '353':
+                users = tokens[5].strip(':').split(' ')
+
+                # Check for mode prefix
+                # Assumes at most one prefix/user
+                for user in users:
+                    user = user.lower()
+                    if user[0] in prefixes:
+                        self.online[user[1:]] = [prefixes[user[0]]]
+                    else:
+                        self.online[user] = []
+
+    def part(self):
+        self.irc.socket.send(bytes('PART ' + self.channel + '\r\n', 'UTF-8'))
+        self.online = {}
+
+    def useronline(self, user):
+        return user in self.online
+
+    def adduser(self, user):
+        self.online[user] = []
+
+    def removeuser(self, user):
+        if user in self.online:
+            del self.online[user]
+
+    def addmode(self, user, mode):
+        if mode not in self.online[user]:
+            self.online[user].append(mode)
+
+    def removemode(self, user, mode):
+        if mode in self.online[user]:
+            self.online[user].remove(mode)
+
+    def hasmode(self, user, mode):
+        return mode in self.online.get(user, default=[])
+
+    def nickchange(self, user, newnick):
+        if user in self.online:
+            self.online[newnick] = self.online[user]
+            del self.online[user]
+
+    def __str__(self):
+        return self.channel
