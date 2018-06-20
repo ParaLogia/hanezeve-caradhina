@@ -1,6 +1,7 @@
 import socket
 from queue import Queue, Empty
 from time import sleep
+import logging
 
 
 class IRCManager:
@@ -36,7 +37,6 @@ class IRCManager:
 
         while True:
             line = self.readline()
-            # log(line)
 
             if 'End of /NAMES' in line:
                 break
@@ -78,7 +78,9 @@ class IRCManager:
         if self.linequeue.empty():
             self.updatelinequeue()
         try:
-            return self.linequeue.get_nowait()
+            line = self.linequeue.get_nowait()
+            logging.log(logging.DEBUG, line)
+            return line
         except Empty:
             return None
 

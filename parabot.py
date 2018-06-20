@@ -7,20 +7,21 @@ from ircmanager import IRCManager
 
 def setloggerhandler():
     datetime_str = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S')
-    logfile = 'logs/{}.log'.format(datetime_str)
-    handler = logging.FileHandler(logfile)
     formatter = logging.Formatter('[%(asctime)s] %(message)s', '%H:%M:%S')
+
+    debuglog = 'logs/debug {}.log'.format(datetime_str)
+    debughandler = logging.FileHandler(debuglog)
+    debughandler.setFormatter(formatter)
+    debughandler.setLevel(logging.DEBUG)
+
+    chatlog = 'logs/chat {}.log'.format(datetime_str)
+    chathandler = logging.FileHandler(chatlog)
+    chathandler.setFormatter(formatter)
+    chathandler.setLevel(logging.INFO)
+
     logger = logging.getLogger()
-
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-
-
-def log(text):
-    text = text.strip('\r\n')
-    logging.info(text)
-    print(text)
+    logger.addHandler(debughandler)
+    logger.addHandler(chathandler)
 
 
 def main():
@@ -41,9 +42,7 @@ def main():
     # Check for initial PING before joining channel (necessary for choopa.net)
     line = irc.readline()
     while 'NOTICE' in line:
-        log(line)
         line = irc.readline()
-    log(line)
 
     online = irc.joinchannel(channel)
     print(online)
@@ -55,8 +54,6 @@ def main():
         if not line:
             sleep(0.05)
             continue
-
-        log(line)
 
         if ' PRIVMSG ' in line:
             if shy:
