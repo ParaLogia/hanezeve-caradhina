@@ -14,14 +14,15 @@ def setloggerhandler():
     debughandler.setFormatter(formatter)
     debughandler.setLevel(logging.DEBUG)
 
-    chatlog = 'logs/chat {}.log'.format(datetime_str)
-    chathandler = logging.FileHandler(chatlog)
-    chathandler.setFormatter(formatter)
-    chathandler.setLevel(logging.INFO)
+    # chatlog = 'logs/chat {}.log'.format(datetime_str)
+    # chathandler = logging.FileHandler(chatlog)
+    # chathandler.setFormatter(formatter)
+    # chathandler.setLevel(logging.INFO)
 
     logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
     logger.addHandler(debughandler)
-    logger.addHandler(chathandler)
+    # logger.addHandler(chathandler)
 
 
 def main():
