@@ -119,7 +119,7 @@ class Channel:
             self.online[user].remove(mode)
 
     def hasmode(self, user, mode):
-        return mode in self.online.get(user, default=[])
+        return mode in self.online.get(user, [])
 
     def nickchange(self, user, newnick):
         if user in self.online:
