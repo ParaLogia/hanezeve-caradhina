@@ -13,6 +13,83 @@ prefixes = {
 }
 
 
+def trimcolon(s: str):
+    """
+    :param s: string with possible leading colon
+    :return: a copy of s with a single leading colon removed,
+             if one is found. Otherwise returns s as-is.
+    """
+    return s[1:] if s.startswith(':') else s
+
+
+def parseline(line: str):
+    """
+    Splits a line into source, event, and parameter tokens
+    :param line: line of text read from the irc socket
+    :return: a tuple of form (source, event, params), where params
+             is a tuple of all the parameters relevant to the event
+    """
+    source, event, params = line.split(' ', 2)
+
+    if event == 'NOTICE':
+        target, message = params.split(' ', 1)
+        params = target, trimcolon(message)
+
+    elif event == 'JOIN':
+        channel = trimcolon(params)
+        params = channel,
+
+    elif event == 'QUIT':
+        reason = trimcolon(params)
+        params = reason,
+
+    elif event == 'PART':
+        channel, reason = params.split(' ', 1)
+        params = channel, trimcolon(reason)
+
+    elif event == 'NICK':
+        nick = trimcolon(params)
+        params = nick,
+
+    elif event == 'MODE':
+        try:
+            target, mode, param = params.split(' ', 2)
+            params = target, mode, param
+        except ValueError:
+            target, mode = params.split(' ')
+            params = target, mode
+
+    elif event == 'KICK':
+        channel, nick, reason = params.split(' ', 2)
+        params = channel, nick, trimcolon(reason)
+
+    elif event == 'PRIVMSG':
+        target, message = params.split(' ', 1)
+        params = target, trimcolon(message)
+
+    elif event == 'INVITE':
+        target, channel = params.split(' ', 1)
+        params = target, trimcolon(channel)
+
+    elif event == 'TOPIC':
+        channel, topic = params.split(' ', 1)
+        topic = trimcolon(topic)
+
+    elif event == 'ERROR':
+        message = trimcolon(params)
+        params = message,
+
+    else:
+        try:
+            event = int(event)
+            target, message = params.split(' ', 1)
+            params = target, trimcolon(message)
+        except ValueError:
+            print('Unrecognized line format:', line)
+
+    return source, event, params
+
+
 # TODO idea : list of channels as listeners
 class IRCManager:
     def __init__(self, nick, server, port):
