@@ -26,7 +26,7 @@ def setloggerhandler():
 
 
 def main():
-    nick = 'parabotia'
+    nick = 'hanezeve'
     # server = 'irc.choopa.net'
     server = 'chat.freenode.net'
     port = 6667
