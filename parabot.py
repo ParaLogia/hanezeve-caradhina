@@ -27,8 +27,8 @@ def setloggerhandler():
 
 def main():
     nick = 'parabotia'
-    server = 'irc.choopa.net'
-    # server = 'chat.freenode.net'
+    # server = 'irc.choopa.net'
+    server = 'chat.freenode.net'
     port = 6667
     channel = '#paratest'
     adminname = 'paralogia'
@@ -71,6 +71,11 @@ def main():
             greeting = r'hi|hello|howdy|good (day|morning|afternoon|evening)'
             if re.match(greeting + r'\W+' + nick + r'\b', message.lower()):
                 irc.sendmsg('Hello ' + name + '!', channel)
+
+            if message == '!ping':
+                irc.sendmsg('\1PING 458315181\1', target=name)
+                # TODO set timer and check for response
+
             if message == exitcode:
                 name = name.lower()
                 if name == adminname or channel.hasmode(name, 'o'):

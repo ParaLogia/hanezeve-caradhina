@@ -73,7 +73,7 @@ def parseline(line: str):
 
     elif event == 'TOPIC':
         channel, topic = params.split(' ', 1)
-        topic = trimcolon(topic)
+        params = channel, trimcolon(topic)
 
     elif event == 'ERROR':
         message = trimcolon(params)
