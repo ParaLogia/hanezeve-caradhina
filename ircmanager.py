@@ -29,7 +29,18 @@ def parseline(line: str):
     :return: a tuple of form (source, event, params), where params
              is a tuple of all the parameters relevant to the event
     """
-    source, event, params = line.split(' ', 2)
+    line = line.rstrip('\r\n')
+    try:
+        source, event, params = line.split(' ', 2)
+    except ValueError:
+        source = ''
+        event, params = line.split(' ')
+
+    # In some cases, source is omitted
+    if source.isalnum() and source.isupper():
+        source, event, params = '', source, event+params
+
+    source = trimcolon(source)
 
     if event == 'NOTICE':
         target, message = params.split(' ', 1)
