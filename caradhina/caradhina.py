@@ -33,12 +33,11 @@ def parseline(line: str):
     try:
         source, event, params = line.split(' ', 2)
     except ValueError:
-        source = ''
-        event, params = line.split(' ')
+        source, event, params = '', *line.split(' ', 1)
 
     # In some cases, source is omitted
     if source.isalnum() and source.isupper():
-        source, event, params = '', source, event+params
+        source, event, params = '', *line.split(' ', 1)
 
     source = trimcolon(source)
 
@@ -165,6 +164,7 @@ class Channel:
         self.channel = channel
         self.irc = irc
         self.online = {}
+        self.chanmodes = {}
 
     def join(self):
         self.irc.socket.send(bytes('JOIN ' + self.channel + '\r\n', 'UTF-8'))

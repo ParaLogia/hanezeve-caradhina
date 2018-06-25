@@ -2,7 +2,7 @@ import datetime
 import re
 from time import sleep
 import logging
-from ircmanager import IRCManager
+from caradhina.caradhina import IRCManager
 
 
 def setloggerhandler():
