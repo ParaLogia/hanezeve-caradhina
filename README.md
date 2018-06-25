@@ -7,7 +7,7 @@ This project contains two packages:
 
 Both are still heavily under construction.
 
-### Todo
+### Upcoming Changes
 ##### caradhina
 - [ ] Event listener list
   - [ ] Channel object as listener
