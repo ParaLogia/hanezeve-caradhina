@@ -100,7 +100,6 @@ def parseline(line: str):
     return source, event, params
 
 
-# TODO idea : list of channels as listeners
 class IRCManager:
     def __init__(self, nick, server, port):
         self.nick = nick
@@ -109,7 +108,7 @@ class IRCManager:
 
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.linequeue = Queue()
-        self.nextreadprefix = ''    # TODO rename?
+        self.nextreadprefix = ''    # rename?
 
     def connect(self):
         self.socket.connect((self.server, self.port))

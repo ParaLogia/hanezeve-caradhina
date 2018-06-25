@@ -83,8 +83,6 @@ def main():
                     irc.quit()
                     exit(0)
 
-        # TODO update online users and modes by monitoring JOIN/QUIT/PART/MODE/NICK changes
-
 
 if __name__ == '__main__':
     main()
