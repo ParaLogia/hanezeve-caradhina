@@ -96,6 +96,7 @@ def parseline(line: str):
             params = target, trimcolon(message)
         except ValueError:
             print('Unrecognized line format:', line)
+            params = params,
 
     return source, event, params
 
