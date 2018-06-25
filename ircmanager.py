@@ -149,9 +149,11 @@ class IRCManager:
         try:
             line = self.linequeue.get_nowait()
             logging.log(logging.DEBUG, line)
+
+            # TODO parse line and call handlers
             return line
         except Empty:
-            return None
+            return ''
 
     def quit(self, message='Leaving'):
         # NOTE: Message doesn't seem to work

@@ -51,7 +51,7 @@ def main():
 
     while True:
         line = irc.readline()
-        if not line:
+        if len(line) == 0:
             sleep(0.05)
             continue
 
@@ -84,20 +84,6 @@ def main():
                     exit(0)
 
         # TODO update online users and modes by monitoring JOIN/QUIT/PART/MODE/NICK changes
-        elif ' JOIN ' in line:
-            pass
-
-        elif ' QUIT ' in line:
-            pass
-
-        elif ' PART ' in line:
-            pass
-
-        elif ' MODE ' in line:
-            pass
-
-        elif ' NICK ' in line:
-            pass
 
 
 if __name__ == '__main__':
