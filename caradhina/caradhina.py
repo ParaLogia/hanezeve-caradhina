@@ -219,6 +219,12 @@ class IRCManager:
 
             @wraps(listener)
             def wrapper(*args, **kwargs):
+
+                # TODO rework (not elegant right now) -- Use flags param?
+                if 'unbind' in kwargs and kwargs['unbind']:
+                    self.unbindlistener(wrapper, *events)
+                    return EventResponse.UNBIND
+
                 response = listener(*args, **kwargs)
                 if response == EventResponse.UNBIND:
                     self.unbindlistener(wrapper, *events)
@@ -240,7 +246,7 @@ class Channel:
         self.irc = irc
         self.online = {}
         self.chanmodes = {}
-        self.listeners = {}
+        self.listeners = []
         self.topic = ''
 
     def join(self):
@@ -346,18 +352,22 @@ class Channel:
 
                     print(self.online)
 
-        self.listeners[initlistener] = Event.NUMERIC
-        self.listeners[joinlistener] = Event.JOIN
-        self.listeners[partlistener] = Event.PART
-        self.listeners[kicklistener] = Event.KICK
-        self.listeners[quitlistener] = Event.QUIT
-        self.listeners[nicklistener] = Event.NICK
-        self.listeners[modelistener] = Event.MODE
+        self.listeners.extend([
+            initlistener,
+            joinlistener,
+            partlistener,
+            kicklistener,
+            quitlistener,
+            nicklistener,
+            modelistener
+        ])
 
     def part(self):
         self.irc.socket.send(bytes('PART ' + self.channelname + '\r\n', 'UTF-8'))
         self.online = {}
-        # TODO unbind listeners
+        self.topic = ''
+        for listener in self.listeners:
+            listener(unbind=True)
 
     def useronline(self, user):
         return user in self.online
