@@ -224,36 +224,50 @@ class IRCManager:
 
 
 class Channel:
-    def __init__(self, channel, irc):
-        self.channel = channel
+    def __init__(self, channelname, irc):
+        self.channelname = channelname
         self.irc = irc
         self.online = {}
         self.chanmodes = {}
 
     def join(self):
-        self.irc.socket.send(bytes('JOIN ' + self.channel + '\r\n', 'UTF-8'))
+        self.createlisteners()
+        self.irc.socket.send(bytes('JOIN ' + self.channelname + '\r\n', 'UTF-8'))
 
-        line = ''
-        while 'End of /NAMES' not in line:
-            line = self.irc.readline()
-            if len(line) == 0:
-                continue
-            tokens = line.split(' ', maxsplit=5)
+    def createlisteners(self):
 
-            if tokens[1] == '353':
-                users = tokens[5].strip(':').split(' ')
+        @self.irc.listen(Event.NUMERIC)
+        def nameslistener(irc, code, message, **kwargs):
+            """
+            Listens for users currently on the channel, including modes.
+            Unbinds itself after the names list ends.
+            """
+            if code == 353:
+                _, channel, names = message.split(' ', 2)
+                namelist = trimcolon(names).split(' ')
 
-                # Check for mode prefix
-                # Assumes at most one prefix/user
-                for user in users:
-                    user = user.lower()
-                    if user[0] in prefixes:
-                        self.online[user[1:]] = [prefixes[user[0]]]
-                    else:
-                        self.online[user] = []
+                if channel.lower() == self.channelname:
+                    # Check for mode prefixes
+                    for name in namelist:
+                        name = name.lower()
+                        usermodes = []
+                        for i, prefix in enumerate(name):
+                            if prefix in prefixes:
+                                usermodes.append(prefixes[prefix])
+                            else:
+                                user = name[i:]
+                                self.online[user] = usermodes
+                                break
+
+            elif code == 366:
+                channel, _ = message.split(' ', 1)
+
+                if channel.lower() == self.channelname:
+                    print(self.online)
+                    return EventResponse.UNBIND
 
     def part(self):
-        self.irc.socket.send(bytes('PART ' + self.channel + '\r\n', 'UTF-8'))
+        self.irc.socket.send(bytes('PART ' + self.channelname + '\r\n', 'UTF-8'))
         self.online = {}
 
     def useronline(self, user):
@@ -283,4 +297,4 @@ class Channel:
             del self.online[user]
 
     def __str__(self):
-        return self.channel
+        return self.channelname
