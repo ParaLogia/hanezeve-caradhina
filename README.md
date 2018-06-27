@@ -3,7 +3,7 @@ A simple IRC bot built using standard Python 3 libraries only.
 
 This project contains two packages:
 - caradhina: Base IRC connection management.
-- hanezeve: An example bot that uses caradhina.
+- hanezeve: Example bot running on caradhina.
 
 Both are still heavily under construction.
 
