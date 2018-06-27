@@ -170,7 +170,7 @@ class IRCManager:
                         self.pong(line[6:])
                     self.linequeue.put(line)
             self.nextreadprefix = lines[-1]
-        except BlockingIOError:
+        except (BlockingIOError, socket.timeout):
             return
 
     def readline(self):
@@ -236,6 +236,8 @@ class Channel:
         line = ''
         while 'End of /NAMES' not in line:
             line = self.irc.readline()
+            if len(line) == 0:
+                continue
             tokens = line.split(' ', maxsplit=5)
 
             if tokens[1] == '353':
