@@ -9,9 +9,12 @@ Both are still heavily under construction.
 
 ### Upcoming Changes
 ##### caradhina
-- [ ] Event listener list
+- [x] Event listeners
   - [ ] Channel object as listener
 - [ ] CTCP responses
+  - [ ] PING
+  - [ ] VERSION
+  - [ ] TIME
 - [ ] Timed messages
 ##### hanezeve
 - [ ] Taboo word game
