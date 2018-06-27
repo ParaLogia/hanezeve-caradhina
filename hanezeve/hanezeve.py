@@ -3,6 +3,7 @@ import re
 from time import sleep
 import logging
 from caradhina.caradhina import IRCManager
+from caradhina.event import Event, EventResponse
 
 
 def setloggerhandler():
@@ -47,12 +48,11 @@ def main():
 
     channel = irc.joinchannel(channel)
 
-    irc.socket.setblocking(False)
+    irc.socket.settimeout(0.05)
 
     while True:
         line = irc.readline()
         if len(line) == 0:
-            sleep(0.05)
             continue
 
         if ' PRIVMSG ' in line:
