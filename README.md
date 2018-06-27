@@ -10,11 +10,14 @@ Both are still heavily under construction.
 ### Upcoming Changes
 ##### caradhina
 - [x] Event listeners
-  - [ ] Channel object as listener
+  - [x] Channel object listeners
+  - [ ] Rework unbinding control flow
+  - [ ] Internal readline loop
 - [ ] CTCP responses
   - [ ] PING
   - [ ] VERSION
   - [ ] TIME
 - [ ] Timed messages
 ##### hanezeve
+- [ ] User listeners
 - [ ] Taboo word game
