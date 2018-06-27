@@ -15,6 +15,17 @@ prefixes = {
     '+': 'v',
 }
 
+# List of modes that can be applied to users
+# I dunno which are actually visible in a channel
+usermodes = [
+    'q',
+    'a',
+    'o',
+    'h',
+    'v',
+    'a',
+]
+
 
 def trimcolon(s: str):
     """
@@ -27,7 +38,7 @@ def trimcolon(s: str):
 
 def parseline(line: str):
     """
-    Splits a line into event, and parameter tokens, and returns a corresponding
+    Splits a line into event and parameter tokens, and returns a corresponding
     Event object (if one is found), and a dict of keyword args for event listeners.
 
     :param line: line of text that has been read from the irc socket.
@@ -74,13 +85,13 @@ def parseline(line: str):
 
     elif event == 'MODE':
         try:
-            target, mode, param = params.split(' ', 2)
-            kwargs['target'] = target
+            channel, mode, param = params.split(' ', 2)
+            kwargs['channel'] = channel
             kwargs['mode'] = mode
             kwargs['param'] = param
         except ValueError:
-            target, mode = params.split(' ')
-            kwargs['target'] = target
+            channel, mode = params.split(' ')
+            kwargs['channel'] = channel
             kwargs['mode'] = mode
 
     elif event == 'KICK':
@@ -189,7 +200,7 @@ class IRCManager:
 
     def notifylisteners(self, event, *args, **kwargs):
         for listener in self.listeners.setdefault(event, []):
-            listener(self, *args, **kwargs)
+            listener(*args, **kwargs)
 
     def bindlistener(self, listener, *events):
         for event in events:
@@ -229,20 +240,29 @@ class Channel:
         self.irc = irc
         self.online = {}
         self.chanmodes = {}
+        self.listeners = {}
+        self.topic = ''
 
     def join(self):
-        self.createlisteners()
+        self._createlisteners()
         self.irc.socket.send(bytes('JOIN ' + self.channelname + '\r\n', 'UTF-8'))
 
-    def createlisteners(self):
+    def _createlisteners(self):
+        irc = self.irc
 
-        @self.irc.listen(Event.NUMERIC)
-        def nameslistener(irc, code, message, **kwargs):
+        @irc.listen(Event.NUMERIC)
+        def initlistener(code, message, **kwargs):
             """
-            Listens for users currently on the channel, including modes.
-            Unbinds itself after the names list ends.
+            Listens for numerics directly after joining, in order to
+            initialize the topic and online user/mode list.
+
+            Unbinds itself after reaching the end of the names list.
             """
-            if code == 353:
+            if code == 332:
+                # TODO get topic
+                pass
+
+            elif code == 353:
                 _, channel, names = message.split(' ', 2)
                 namelist = trimcolon(names).split(' ')
 
@@ -250,10 +270,10 @@ class Channel:
                     # Check for mode prefixes
                     for name in namelist:
                         name = name.lower()
-                        usermodes = []
+                        usermodes = set()
                         for i, prefix in enumerate(name):
                             if prefix in prefixes:
-                                usermodes.append(prefixes[prefix])
+                                usermodes.add(prefixes[prefix])
                             else:
                                 user = name[i:]
                                 self.online[user] = usermodes
@@ -266,35 +286,84 @@ class Channel:
                     print(self.online)
                     return EventResponse.UNBIND
 
+        @irc.listen(Event.JOIN)
+        def joinlistener(source, channel, **kwargs):
+            if channel.lower() == self.channelname:
+                name, _ = source.split('!~', 1)
+                self.online[name] = set()
+
+                print(self.online)
+
+        @irc.listen(Event.PART)
+        def partlistener(source, channel, **kwargs):
+            if channel.lower() == self.channelname:
+                name, _ = source.split('!~', 1)
+                del self.online[name]
+
+                print(self.online)
+
+        @irc.listen(Event.KICK)
+        def kicklistener(channel, nick, **kwargs):
+            if channel.lower() == self.channelname:
+                del self.online[nick]
+
+                print(self.online)
+
+        @irc.listen(Event.QUIT)
+        def quitlistener(source, **kwargs):
+            name, _ = source.split('!~', 1)
+            try:
+                del self.online[name]
+            except KeyError:
+                pass
+
+            print(self.online)
+
+        @irc.listen(Event.NICK)
+        def nicklistener(source, nick, **kwargs):
+            name, _ = source.split('!~', 1)
+            try:
+                self.online[nick] = self.online[name]
+                del self.online[name]
+
+                print(self.online)
+            except KeyError:
+                pass
+
+        @irc.listen(Event.MODE)
+        def modelistener(channel, mode, **kwargs):
+            if channel.lower() == self.channelname:
+                name = kwargs['param']
+                change, mode = mode[0], mode[1]
+                if mode in usermodes:
+                    if change == '+':
+                        self.online[name].add(mode)
+                    elif change == '-':
+                        try:
+                            self.online[name].remove(mode)
+                        except KeyError:
+                            pass
+
+                    print(self.online)
+
+        self.listeners[initlistener] = Event.NUMERIC
+        self.listeners[joinlistener] = Event.JOIN
+        self.listeners[partlistener] = Event.PART
+        self.listeners[kicklistener] = Event.KICK
+        self.listeners[quitlistener] = Event.QUIT
+        self.listeners[nicklistener] = Event.NICK
+        self.listeners[modelistener] = Event.MODE
+
     def part(self):
         self.irc.socket.send(bytes('PART ' + self.channelname + '\r\n', 'UTF-8'))
         self.online = {}
+        # TODO unbind listeners
 
     def useronline(self, user):
         return user in self.online
 
-    def adduser(self, user):
-        self.online[user] = []
-
-    def removeuser(self, user):
-        if user in self.online:
-            del self.online[user]
-
-    def addmode(self, user, mode):
-        if mode not in self.online[user]:
-            self.online[user].append(mode)
-
-    def removemode(self, user, mode):
-        if mode in self.online[user]:
-            self.online[user].remove(mode)
-
     def hasmode(self, user, mode):
-        return mode in self.online.get(user, [])
-
-    def nickchange(self, user, newnick):
-        if user in self.online:
-            self.online[newnick] = self.online[user]
-            del self.online[user]
+        return mode in self.online.get(user, set())
 
     def __str__(self):
         return self.channelname
