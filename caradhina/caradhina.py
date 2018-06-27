@@ -265,8 +265,11 @@ class Channel:
             Unbinds itself after reaching the end of the names list.
             """
             if code == 332:
-                # TODO get topic
-                pass
+                channel, topic = message.split(' ', 1)
+                if channel.lower() == self.channelname:
+                    self.topic = trimcolon(topic)
+
+                    print(self.topic)
 
             elif code == 353:
                 _, channel, names = message.split(' ', 2)
@@ -352,6 +355,13 @@ class Channel:
 
                     print(self.online)
 
+        @irc.listen(Event.TOPIC)
+        def topiclistener(channel, topic, **kwargs):
+            if channel.lower() == self.channelname:
+                self.topic = topic
+
+            print(self.topic)
+
         self.listeners.extend([
             initlistener,
             joinlistener,
@@ -359,7 +369,8 @@ class Channel:
             kicklistener,
             quitlistener,
             nicklistener,
-            modelistener
+            modelistener,
+            topiclistener,
         ])
 
     def part(self):
