@@ -1,7 +1,10 @@
 import socket
+from functools import wraps
 from queue import Queue, Empty
 from time import sleep
 import logging
+
+from caradhina.event import Event, EventResponse
 
 # Map user prefix => mode
 prefixes = {
@@ -15,7 +18,7 @@ prefixes = {
 
 def trimcolon(s: str):
     """
-    :param s: string with possible leading colon
+    :param s: string with possible leading colon.
     :return: a copy of s with a single leading colon removed,
              if one is found. Otherwise returns s as-is.
     """
@@ -24,10 +27,13 @@ def trimcolon(s: str):
 
 def parseline(line: str):
     """
-    Splits a line into source, event, and parameter tokens
-    :param line: line of text read from the irc socket
-    :return: a tuple of form (source, event, params), where params
-             is a tuple of all the parameters relevant to the event
+    Splits a line into event, and parameter tokens, and returns a corresponding
+    Event object (if one is found), and a dict of keyword args for event listeners.
+
+    :param line: line of text that has been read from the irc socket.
+    :return: a tuple of form (event, kwargs)
+             If the event does not correspond to an Event member,
+             the first element of the tuple will be a string instead.
     """
     line = line.rstrip('\r\n')
     try:
@@ -41,64 +47,88 @@ def parseline(line: str):
 
     source = trimcolon(source)
 
+    # Keyword args to be pass to event listeners
+    kwargs = {'source': source}
+
     if event == 'NOTICE':
         target, message = params.split(' ', 1)
-        params = target, trimcolon(message)
+        kwargs['target'] = target
+        kwargs['message'] = trimcolon(message)
 
     elif event == 'JOIN':
         channel = trimcolon(params)
-        params = channel,
+        kwargs['channel'] = channel
 
     elif event == 'QUIT':
         reason = trimcolon(params)
-        params = reason,
+        kwargs['reason'] = reason
 
     elif event == 'PART':
         channel, reason = params.split(' ', 1)
-        params = channel, trimcolon(reason)
+        kwargs['channel'] = channel
+        kwargs['reason'] = trimcolon(reason)
 
     elif event == 'NICK':
         nick = trimcolon(params)
-        params = nick,
+        kwargs['nick'] = nick
 
     elif event == 'MODE':
         try:
             target, mode, param = params.split(' ', 2)
-            params = target, mode, param
+            kwargs['target'] = target
+            kwargs['mode'] = mode
+            kwargs['param'] = param
         except ValueError:
             target, mode = params.split(' ')
-            params = target, mode
+            kwargs['target'] = target
+            kwargs['mode'] = mode
 
     elif event == 'KICK':
         channel, nick, reason = params.split(' ', 2)
-        params = channel, nick, trimcolon(reason)
+        kwargs['channel'] = channel
+        kwargs['nick'] = nick
+        kwargs['reason'] = trimcolon(reason)
 
     elif event == 'PRIVMSG':
         target, message = params.split(' ', 1)
-        params = target, trimcolon(message)
+        kwargs['target'] = target
+        kwargs['message'] = trimcolon(message)
 
     elif event == 'INVITE':
         target, channel = params.split(' ', 1)
-        params = target, trimcolon(channel)
+        kwargs['target'] = target
+        kwargs['channel'] = trimcolon(channel)
 
     elif event == 'TOPIC':
         channel, topic = params.split(' ', 1)
-        params = channel, trimcolon(topic)
+        kwargs['channel'] = channel
+        kwargs['topic'] = trimcolon(topic)
 
     elif event == 'ERROR':
         message = trimcolon(params)
-        params = message,
+        kwargs['message'] = message
 
     else:
         try:
-            event = int(event)
+            code = int(event)
+            event = 'NUMERIC'
             target, message = params.split(' ', 1)
-            params = target, trimcolon(message)
+            kwargs['code'] = code
+            kwargs['target'] = target
+            kwargs['message'] = trimcolon(message)
         except ValueError:
-            print('Unrecognized line format:', line)
-            params = params,
+            print('Unrecognized event in line:', line)
+            kwargs['params'] = params
 
-    return source, event, params
+    try:
+        # Get enum of event
+        event = Event[event]
+    except KeyError:
+        # Allows for inconsistent return types,
+        # but allows for undocumented events
+        pass
+
+    return event, kwargs
 
 
 class IRCManager:
@@ -111,10 +141,11 @@ class IRCManager:
         self.linequeue = Queue()
         self.nextreadprefix = ''    # rename?
 
+        self.listeners = {event: [] for event in Event}
+
     def connect(self):
         self.socket.connect((self.server, self.port))
         self.socket.send(bytes('NICK {0}\r\n'.format(self.nick), 'UTF-8'))
-        sleep(0.1)
         self.socket.send(bytes('USER {0} {0} {0} {0}\r\n'.format(self.nick), 'UTF-8'))
 
     def joinchannel(self, channel):
@@ -128,7 +159,7 @@ class IRCManager:
     def sendmsg(self, msg, target):
         self.socket.send(bytes('PRIVMSG {0} :{1}\r\n'.format(target, msg), 'UTF-8'))
 
-    def updatelinequeue(self):
+    def _updatelinequeue(self):
         try:
             msg = self.socket.recv(2048).decode('UTF-8')
             lines = msg.split('\r\n')
@@ -144,15 +175,48 @@ class IRCManager:
 
     def readline(self):
         if self.linequeue.empty():
-            self.updatelinequeue()
+            self._updatelinequeue()
         try:
             line = self.linequeue.get_nowait()
             logging.log(logging.DEBUG, line)
 
-            # TODO parse line and call handlers
+            event, params = parseline(line)
+            self.notifylisteners(event, **params)
+
             return line
         except Empty:
             return ''
+
+    def notifylisteners(self, event, *args, **kwargs):
+        for listener in self.listeners.setdefault(event, []):
+            listener(self, *args, **kwargs)
+
+    def bindlistener(self, listener, *events):
+        for event in events:
+            self.listeners.setdefault(event, []).append(listener)
+
+    def unbindlistener(self, listener, *events):
+        for event in events:
+            try:
+                self.listeners[event].remove(listener)
+            except ValueError:
+                pass
+
+    def listen(self, *events):
+
+        def decorator(listener):
+
+            @wraps(listener)
+            def wrapper(*args, **kwargs):
+                response = listener(*args, **kwargs)
+                if response == EventResponse.UNBIND:
+                    self.unbindlistener(wrapper, *events)
+                return response
+
+            self.bindlistener(wrapper, *events)
+            return wrapper
+
+        return decorator
 
     def quit(self, message='Leaving'):
         # NOTE: Message doesn't seem to work
