@@ -4,7 +4,7 @@ from queue import Queue, Empty
 from time import sleep
 import logging
 
-from caradhina.event import Event, EventResponse
+from caradhina.event import EventType, EventResponse, parseline, trimcolon
 
 # Map user prefix => mode
 prefixes = {
@@ -27,121 +27,6 @@ usermodes = [
 ]
 
 
-def trimcolon(s: str):
-    """
-    :param s: string with possible leading colon.
-    :return: a copy of s with a single leading colon removed,
-             if one is found. Otherwise returns s as-is.
-    """
-    return s[1:] if s.startswith(':') else s
-
-
-def parseline(line: str):
-    """
-    Splits a line into event and parameter tokens, and returns a corresponding
-    Event object (if one is found), and a dict of keyword args for event listeners.
-
-    :param line: line of text that has been read from the irc socket.
-    :return: a tuple of form (event, kwargs)
-             If the event does not correspond to an Event member,
-             the first element of the tuple will be a string instead.
-    """
-    line = line.rstrip('\r\n')
-    try:
-        source, event, params = line.split(' ', 2)
-    except ValueError:
-        source, event, params = '', *line.split(' ', 1)
-
-    # In some cases, source is omitted
-    if source.isalnum() and source.isupper():
-        source, event, params = '', *line.split(' ', 1)
-
-    source = trimcolon(source)
-
-    # Keyword args to be pass to event listeners
-    kwargs = {'source': source}
-
-    if event == 'NOTICE':
-        target, message = params.split(' ', 1)
-        kwargs['target'] = target
-        kwargs['message'] = trimcolon(message)
-
-    elif event == 'JOIN':
-        channel = trimcolon(params)
-        kwargs['channel'] = channel
-
-    elif event == 'QUIT':
-        reason = trimcolon(params)
-        kwargs['reason'] = reason
-
-    elif event == 'PART':
-        channel, reason = params.split(' ', 1)
-        kwargs['channel'] = channel
-        kwargs['reason'] = trimcolon(reason)
-
-    elif event == 'NICK':
-        nick = trimcolon(params)
-        kwargs['nick'] = nick
-
-    elif event == 'MODE':
-        try:
-            channel, mode, param = params.split(' ', 2)
-            kwargs['channel'] = channel
-            kwargs['mode'] = mode
-            kwargs['param'] = param
-        except ValueError:
-            channel, mode = params.split(' ')
-            kwargs['channel'] = channel
-            kwargs['mode'] = mode
-
-    elif event == 'KICK':
-        channel, nick, reason = params.split(' ', 2)
-        kwargs['channel'] = channel
-        kwargs['nick'] = nick
-        kwargs['reason'] = trimcolon(reason)
-
-    elif event == 'PRIVMSG':
-        target, message = params.split(' ', 1)
-        kwargs['target'] = target
-        kwargs['message'] = trimcolon(message)
-
-    elif event == 'INVITE':
-        target, channel = params.split(' ', 1)
-        kwargs['target'] = target
-        kwargs['channel'] = trimcolon(channel)
-
-    elif event == 'TOPIC':
-        channel, topic = params.split(' ', 1)
-        kwargs['channel'] = channel
-        kwargs['topic'] = trimcolon(topic)
-
-    elif event == 'ERROR':
-        message = trimcolon(params)
-        kwargs['message'] = message
-
-    else:
-        try:
-            code = int(event)
-            event = 'NUMERIC'
-            target, message = params.split(' ', 1)
-            kwargs['code'] = code
-            kwargs['target'] = target
-            kwargs['message'] = trimcolon(message)
-        except ValueError:
-            print('Unrecognized event in line:', line)
-            kwargs['params'] = params
-
-    try:
-        # Get enum of event
-        event = Event[event]
-    except KeyError:
-        # Allows for inconsistent return types,
-        # but allows for undocumented events
-        pass
-
-    return event, kwargs
-
-
 class IRCManager:
     def __init__(self, nick, server, port):
         self.nick = nick
@@ -152,7 +37,7 @@ class IRCManager:
         self.linequeue = Queue()
         self.nextreadprefix = ''    # rename?
 
-        self.listeners = {event: [] for event in Event}
+        self.listeners = {event: [] for event in EventType}
 
     def connect(self):
         self.socket.connect((self.server, self.port))
@@ -256,7 +141,7 @@ class Channel:
     def _createlisteners(self):
         irc = self.irc
 
-        @irc.listen(Event.NUMERIC)
+        @irc.listen(EventType.NUMERIC)
         def initlistener(code, message, **kwargs):
             """
             Listens for numerics directly after joining, in order to
@@ -295,7 +180,7 @@ class Channel:
                     print(self.online)
                     return EventResponse.UNBIND
 
-        @irc.listen(Event.JOIN)
+        @irc.listen(EventType.JOIN)
         def joinlistener(source, channel, **kwargs):
             if channel.lower() == self.channelname:
                 name, _ = source.split('!~', 1)
@@ -303,7 +188,7 @@ class Channel:
 
                 print(self.online)
 
-        @irc.listen(Event.PART)
+        @irc.listen(EventType.PART)
         def partlistener(source, channel, **kwargs):
             if channel.lower() == self.channelname:
                 name, _ = source.split('!~', 1)
@@ -311,14 +196,14 @@ class Channel:
 
                 print(self.online)
 
-        @irc.listen(Event.KICK)
+        @irc.listen(EventType.KICK)
         def kicklistener(channel, nick, **kwargs):
             if channel.lower() == self.channelname:
                 del self.online[nick]
 
                 print(self.online)
 
-        @irc.listen(Event.QUIT)
+        @irc.listen(EventType.QUIT)
         def quitlistener(source, **kwargs):
             name, _ = source.split('!~', 1)
             try:
@@ -328,7 +213,7 @@ class Channel:
 
             print(self.online)
 
-        @irc.listen(Event.NICK)
+        @irc.listen(EventType.NICK)
         def nicklistener(source, nick, **kwargs):
             name, _ = source.split('!~', 1)
             try:
@@ -339,23 +224,24 @@ class Channel:
             except KeyError:
                 pass
 
-        @irc.listen(Event.MODE)
-        def modelistener(channel, mode, **kwargs):
+        @irc.listen(EventType.MODE)
+        def modelistener(channel, modes, **kwargs):
             if channel.lower() == self.channelname:
-                name = kwargs['param']
-                change, mode = mode[0], mode[1]
-                if mode in usermodes:
-                    if change == '+':
-                        self.online[name].add(mode)
-                    elif change == '-':
-                        try:
-                            self.online[name].remove(mode)
-                        except KeyError:
-                            pass
+                change, modes = modes[0], modes[1:]
+                for mode in modes:
+                    if mode in usermodes:
+                        name = kwargs['param']
+                        if change == '+':
+                            self.online[name].add(mode)
+                        elif change == '-':
+                            try:
+                                self.online[name].remove(mode)
+                            except KeyError:
+                                pass
 
-                    print(self.online)
+                        print(self.online)
 
-        @irc.listen(Event.TOPIC)
+        @irc.listen(EventType.TOPIC)
         def topiclistener(channel, topic, **kwargs):
             if channel.lower() == self.channelname:
                 self.topic = topic

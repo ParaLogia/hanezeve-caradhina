@@ -3,7 +3,7 @@ import re
 from time import sleep
 import logging
 from caradhina.caradhina import IRCManager
-from caradhina.event import Event, EventResponse
+from caradhina.event import EventType, EventResponse
 
 
 def setloggerhandler():
