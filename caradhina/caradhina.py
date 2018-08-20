@@ -3,8 +3,11 @@ from functools import wraps
 from queue import Queue, Empty
 from time import sleep
 import logging
+from collections import defaultdict
 
-from caradhina.event import EventType, EventResponse, parseline, trimcolon
+from caradhina import events
+from caradhina.events import EventResponse, parseline, trimcolon
+
 
 # Map user prefix => mode
 prefixes = {
@@ -37,7 +40,7 @@ class IRCManager:
         self.linequeue = Queue()
         self.nextreadprefix = ''    # rename?
 
-        self.listeners = {event: [] for event in EventType}
+        self.listeners = defaultdict(list)
 
     def connect(self):
         self.socket.connect((self.server, self.port))
@@ -75,54 +78,56 @@ class IRCManager:
         try:
             line = self.linequeue.get_nowait()
             logging.log(logging.DEBUG, line)
+            print(line)
 
-            event, params = parseline(line)
-            self.notifylisteners(event, **params)
+            event = parseline(line)
+            self.notifylisteners(event)
 
             return line
         except Empty:
             return ''
 
-    def notifylisteners(self, event, *args, **kwargs):
-        for listener in self.listeners.setdefault(event, []):
-            listener(*args, **kwargs)
+    def notifylisteners(self, event):
+        for listener in self.listeners[event.call]:
+            listener(event)
 
-    def bindlistener(self, listener, *events):
-        for event in events:
-            self.listeners.setdefault(event, []).append(listener)
+    def bindlistener(self, listener, *calls):
+        for call in calls:
+            self.listeners[call].append(listener)
 
-    def unbindlistener(self, listener, *events):
-        for event in events:
+    def unbindlistener(self, listener, *calls):
+        for call in calls:
             try:
-                self.listeners[event].remove(listener)
+                self.listeners[call].remove(listener)
             except ValueError:
                 pass
 
-    def listen(self, *events):
-
+    def listen(self, *calls):
         def decorator(listener):
-
-            @wraps(listener)
-            def wrapper(*args, **kwargs):
-
-                # TODO rework (not elegant right now) -- Use flags param?
-                if 'unbind' in kwargs and kwargs['unbind']:
-                    self.unbindlistener(wrapper, *events)
-                    return EventResponse.UNBIND
-
-                response = listener(*args, **kwargs)
-                if response == EventResponse.UNBIND:
-                    self.unbindlistener(wrapper, *events)
-                return response
-
-            self.bindlistener(wrapper, *events)
-            return wrapper
-
+            return Listener(listener, calls, self)
         return decorator
 
     def quit(self, message='Leaving'):
         # NOTE: Message doesn't seem to work
         self.socket.send(bytes('QUIT :{0}\r\n'.format(message), 'UTF-8'))
+
+
+class Listener:
+    def __init__(self, func, calls, irc):
+        self.func = func
+        self.calls = calls
+        self.irc = irc
+
+        irc.bindlistener(self, *calls)
+
+    def __call__(self, *args, **kwargs):
+        response = self.func(*args, **kwargs)
+        if response == EventResponse.UNBIND:
+            self.irc.unbindlistener(self, *self.calls)
+        return response
+
+    def unbind(self):
+        self.irc.unbindlistener(self, *self.calls)
 
 
 class Channel:
@@ -141,14 +146,15 @@ class Channel:
     def _createlisteners(self):
         irc = self.irc
 
-        @irc.listen(EventType.NUMERIC)
-        def initlistener(code, message, **kwargs):
+        @irc.listen(events.NUMERIC)
+        def initlistener(event):
             """
             Listens for numerics directly after joining, in order to
             initialize the topic and online user/mode list.
 
             Unbinds itself after reaching the end of the names list.
             """
+            code, message = event.code, event.message
             if code == 332:
                 channel, topic = message.split(' ', 1)
                 if channel.lower() == self.channelname:
@@ -180,31 +186,35 @@ class Channel:
                     print(self.online)
                     return EventResponse.UNBIND
 
-        @irc.listen(EventType.JOIN)
-        def joinlistener(source, channel, **kwargs):
+        @irc.listen(events.JOIN)
+        def joinlistener(event):
+            source, channel = event.source, event.channel
             if channel.lower() == self.channelname:
                 name, _ = source.split('!~', 1)
                 self.online[name] = set()
 
                 print(self.online)
 
-        @irc.listen(EventType.PART)
-        def partlistener(source, channel, **kwargs):
+        @irc.listen(events.PART)
+        def partlistener(event):
+            source, channel = event.source, event.channel
             if channel.lower() == self.channelname:
                 name, _ = source.split('!~', 1)
                 del self.online[name]
 
                 print(self.online)
 
-        @irc.listen(EventType.KICK)
-        def kicklistener(channel, nick, **kwargs):
+        @irc.listen(events.KICK)
+        def kicklistener(event):
+            channel, nick = event.channel, event.nick
             if channel.lower() == self.channelname:
                 del self.online[nick]
 
                 print(self.online)
 
-        @irc.listen(EventType.QUIT)
-        def quitlistener(source, **kwargs):
+        @irc.listen(events.QUIT)
+        def quitlistener(event):
+            source = event.source
             name, _ = source.split('!~', 1)
             try:
                 del self.online[name]
@@ -213,8 +223,9 @@ class Channel:
 
             print(self.online)
 
-        @irc.listen(EventType.NICK)
-        def nicklistener(source, nick, **kwargs):
+        @irc.listen(events.NICK)
+        def nicklistener(event):
+            source, nick = event.source, event.nick
             name, _ = source.split('!~', 1)
             try:
                 self.online[nick] = self.online[name]
@@ -224,13 +235,14 @@ class Channel:
             except KeyError:
                 pass
 
-        @irc.listen(EventType.MODE)
-        def modelistener(channel, modes, **kwargs):
+        @irc.listen(events.MODE)
+        def modelistener(event):
+            channel, modes = event.channel, event.modes
             if channel.lower() == self.channelname:
                 change, modes = modes[0], modes[1:]
                 for mode in modes:
                     if mode in usermodes:
-                        name = kwargs['param']
+                        name = event.param
                         if change == '+':
                             self.online[name].add(mode)
                         elif change == '-':
@@ -241,8 +253,9 @@ class Channel:
 
                         print(self.online)
 
-        @irc.listen(EventType.TOPIC)
-        def topiclistener(channel, topic, **kwargs):
+        @irc.listen(events.TOPIC)
+        def topiclistener(event):
+            channel, topic = event.channel, event.topic
             if channel.lower() == self.channelname:
                 self.topic = topic
 
@@ -264,7 +277,8 @@ class Channel:
         self.online = {}
         self.topic = ''
         for listener in self.listeners:
-            listener(unbind=True)
+            listener.unbind()
+        self.listeners.clear()
 
     def useronline(self, user):
         return user in self.online
