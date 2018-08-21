@@ -2,8 +2,9 @@ from enum import Enum, auto
 
 
 class Event():
-    def __init__(self, *, line: str, call=None):
+    def __init__(self, *, line: str, source='', call=''):
         self.line = line
+        self.source = source
         self.call = call
 
 
@@ -38,8 +39,7 @@ def trimcolon(s: str):
 
 def parseline(line: str):
     """
-    Splits a line into event and parameter tokens, and returns a corresponding
-    Event object (if one is found), and a dict of keyword args for event listeners.
+    Parses a message from the server into an Event object.
 
     :param line: line of text that has been read from the irc socket.
     :return: a tuple of form (event, kwargs)
@@ -50,15 +50,17 @@ def parseline(line: str):
     try:
         source, call, params = line.split(' ', 2)
     except ValueError:
-        source, call, params = '', *line.split(' ', 1)
+        call, params = line.split(' ', 1)
+        source = ''
 
-    # In some cases, source is omitted
+    # In some cases, source is omitted--first token is the CALL
     if source.isalnum() and source.isupper():
-        source, call, params = '', *line.split(' ', 1)
+        call, params = source, f'{call} {params}'
+        source = ''
 
-    event = Event(line=line, call=call)
+    source = trimcolon(source)
 
-    event.source = trimcolon(source)
+    event = Event(line=line, source=source, call=call)
 
     if call == NOTICE:
         target, message = params.split(' ', 1)
