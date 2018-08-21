@@ -1,6 +1,6 @@
 import datetime
 import re
-from time import sleep
+from time import time
 import logging
 from caradhina.caradhina import IRCManager, usermodes
 from caradhina import events
@@ -28,8 +28,8 @@ def setloggerhandler():
 
 def main():
     nick = 'hanezeve'
-    # server = 'irc.choopa.net'
-    server = 'chat.freenode.net'
+    server = 'irc.choopa.net'
+    # server = 'chat.freenode.net'
     port = 6667
     chan_name = '#paratest'
     adminname = 'paralogia'
@@ -69,8 +69,32 @@ def main():
                 exit(0)
 
         elif message == '!ping':
-            irc.sendmsg('\1PING 458315181\1', target=name)
-            # TODO set timer and check for response
+            payload = int(time())
+            irc.sendmsg(f'\1PING {payload}\1', target=name)
+
+        # Check CTCP messages
+        elif len(message) > 2 and message[0] == '\1' == message[-1]:
+            ctcp = message[1:-1]
+
+            if ctcp == 'VERSION':
+                irc.sendnotice('VERSION hanezeve 0.5.1', target=name)
+
+            elif ctcp.startswith('PING'):
+                payload = ctcp[5:]
+                irc.sendnotice(f'\1PING {payload}\1', target=name)
+
+    @irc.listen(events.NOTICE)
+    def noticelistener(event):
+        name, *_ = event.source.partition('!')
+        message = event.message.rstrip()
+
+        if len(message) > 2 and message[0] == '\1' == message[-1]:
+            ctcp = message[1:-1]
+
+            if ctcp.startswith('PING'):
+                payload = int(ctcp[5:])
+                diff = time() - payload
+                irc.sendnotice(f'Ping reply took {diff} seconds', target=name)
 
     @irc.listen(events.MODE)
     def modelistener(event):
@@ -83,7 +107,7 @@ def main():
                     if change == '+':
                         irc.sendmsg('My power grows!', channel)
                     elif change == '-':
-                        irc.sendmsg("No!!! My powerrr...", channel)
+                        irc.sendmsg("My power drains...", channel)
 
     irc.join_on_launch(chan_name)
     irc.launch()
