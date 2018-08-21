@@ -40,14 +40,39 @@ class IRCManager:
         self.linequeue = Queue()
         self.nextreadprefix = ''    # rename?
 
+        # queue of channels to join on launch
+        self.joinqueue = []
+        # mapping of channel names to Channel objects
+        self.channels = {}
+
         self.listeners = defaultdict(list)
 
-    def connect(self):
+    def launch(self):
+        """
+        Launches the bot. Connects to the IRC server and begins an infinite read loop.
+        """
         self.socket.connect((self.server, self.port))
         self.socket.send(bytes(f'NICK {self.nick}\r\n', 'UTF-8'))
         self.socket.send(bytes('USER {0} {0} {0} {0}\r\n'.format(self.nick), 'UTF-8'))
 
-    def joinchannel(self, channel):
+        # Check for initial PING before joining any channels (necessary for choopa.net)
+        line = self.readline()
+        while 'NOTICE' in line:
+            line = self.readline()
+
+        # Join queued channels
+        self.channels = {channel: self._joinchannel(channel) for channel in self.joinqueue}
+
+        self.socket.settimeout(0.05)
+
+        # Begin loop
+        while True:
+            self.readline()
+
+    def join_on_launch(self, *channels):
+        self.joinqueue.extend(channels)
+
+    def _joinchannel(self, channel):
         session = Channel(channel, self)
         session.join()
         return session
@@ -134,16 +159,16 @@ class Listener:
 
 class Channel:
     def __init__(self, channelname, irc):
-        self.channelname = channelname
+        self.chan_name = channelname
         self.irc = irc
         self.online = {}
-        self.chanmodes = {}
+        self.chan_modes = {}
         self.listeners = []
         self.topic = ''
 
     def join(self):
         self._createlisteners()
-        self.irc.socket.send(bytes('JOIN ' + self.channelname + '\r\n', 'UTF-8'))
+        self.irc.socket.send(bytes(f'JOIN {self.chan_name}\r\n', 'UTF-8'))
 
     def _createlisteners(self):
         irc = self.irc
@@ -159,7 +184,7 @@ class Channel:
             code, message = event.code, event.message
             if code == 332:
                 channel, topic = message.split(' ', 1)
-                if channel.lower() == self.channelname:
+                if channel.lower() == self.chan_name:
                     self.topic = trimcolon(topic)
 
                     print(self.topic)
@@ -168,7 +193,7 @@ class Channel:
                 _, channel, names = message.split(' ', 2)
                 namelist = trimcolon(names).split(' ')
 
-                if channel.lower() == self.channelname:
+                if channel.lower() == self.chan_name:
                     # Check for mode prefixes
                     for name in namelist:
                         name = name.lower()
@@ -184,14 +209,14 @@ class Channel:
             elif code == 366:
                 channel, _ = message.split(' ', 1)
 
-                if channel.lower() == self.channelname:
+                if channel.lower() == self.chan_name:
                     print(self.online)
                     return EventResponse.UNBIND
 
         @irc.listen(events.JOIN)
         def joinlistener(event):
             source, channel = event.source, event.channel
-            if channel.lower() == self.channelname:
+            if channel.lower() == self.chan_name:
                 name, _ = source.split('!~', 1)
                 self.online[name] = set()
 
@@ -200,7 +225,7 @@ class Channel:
         @irc.listen(events.PART)
         def partlistener(event):
             source, channel = event.source, event.channel
-            if channel.lower() == self.channelname:
+            if channel.lower() == self.chan_name:
                 name, _ = source.split('!~', 1)
                 del self.online[name]
 
@@ -209,8 +234,11 @@ class Channel:
         @irc.listen(events.KICK)
         def kicklistener(event):
             channel, nick = event.channel, event.nick
-            if channel.lower() == self.channelname:
+            if channel.lower() == self.chan_name:
                 del self.online[nick]
+
+                if nick == self.irc.nick:
+                    self.clear()
 
                 print(self.online)
 
@@ -240,7 +268,7 @@ class Channel:
         @irc.listen(events.MODE)
         def modelistener(event):
             channel, modes = event.channel, event.modes
-            if channel.lower() == self.channelname:
+            if channel.lower() == self.chan_name:
                 change, modes = modes[0], modes[1:]
                 for mode in modes:
                     if mode in usermodes:
@@ -258,7 +286,7 @@ class Channel:
         @irc.listen(events.TOPIC)
         def topiclistener(event):
             channel, topic = event.channel, event.topic
-            if channel.lower() == self.channelname:
+            if channel.lower() == self.chan_name:
                 self.topic = topic
 
             print(self.topic)
@@ -275,7 +303,10 @@ class Channel:
         ])
 
     def part(self):
-        self.irc.socket.send(bytes('PART ' + self.channelname + '\r\n', 'UTF-8'))
+        self.irc.socket.send(bytes('PART {self.chan_name}\r\n', 'UTF-8'))
+        self.clear()
+
+    def clear(self):
         self.online = {}
         self.topic = ''
         for listener in self.listeners:
@@ -289,4 +320,4 @@ class Channel:
         return mode in self.online.get(user, set())
 
     def __str__(self):
-        return self.channelname
+        return self.chan_name
