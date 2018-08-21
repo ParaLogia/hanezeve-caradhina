@@ -3,7 +3,7 @@ import re
 from time import sleep
 import logging
 from caradhina.caradhina import IRCManager
-from caradhina.event import EventType, EventResponse
+from caradhina import events
 
 
 def setloggerhandler():
@@ -28,60 +28,54 @@ def setloggerhandler():
 
 def main():
     nick = 'hanezeve'
-    # server = 'irc.choopa.net'
-    server = 'chat.freenode.net'
+    server = 'irc.choopa.net'
+    # server = 'chat.freenode.net'
     port = 6667
-    channel = '#paratest'
+    chan_name = '#paratest'
     adminname = 'paralogia'
-    exitcode = '!stop'
     shy = False
+
+    greeting = r'hi|hello|howdy|good (day|morning|afternoon|evening)'
+    greetingpattern = re.compile(fr'{greeting}\W+{nick}\b')
 
     setloggerhandler()
 
     irc = IRCManager(nick, server, port)
-    irc.connect()
 
-    # Check for initial PING before joining channel (necessary for choopa.net)
-    line = irc.readline()
-    while 'NOTICE' in line:
-        line = irc.readline()
+    @irc.listen(events.PRIVMSG)
+    def msglistener(event):
+        if shy:
+            irc.quit()
 
-    channel = irc.joinchannel(channel)
+        name, *_ = event.source.partition('!')
+        message = event.message.rstrip()
+        target = event.target
 
-    irc.socket.settimeout(0.05)
+        try:
+            channel = irc.channels[target]
+            context = channel
+        except KeyError:
+            channel = None
+            context = name
 
-    while True:
-        line = irc.readline()
-        if len(line) == 0:
-            continue
+        if greetingpattern.match(message.lower()):
+            irc.sendmsg(f'Hello {name}!', context)
 
-        if ' PRIVMSG ' in line:
-            if shy:
+        if message == '!ping':
+            irc.sendmsg('\1PING 458315181\1', target=name)
+            # TODO set timer and check for response
+
+        if message == '!stop':
+            name = name.lower()
+            if name == adminname or context is channel and channel.hasmode(name, 'o'):
+                irc.sendmsg('Bye!', context)
                 irc.quit()
-                return
+                exit(0)
 
-            name = line.split('!', 1)[0][1:]
-            message = line.split('PRIVMSG', 1)[1].split(':', 1)[1]
+    irc.join_on_launch(chan_name)
+    irc.launch()
 
-            message = message.rstrip()
 
-            if len(name) > 16:
-                continue
-
-            greeting = r'hi|hello|howdy|good (day|morning|afternoon|evening)'
-            if re.match(greeting + r'\W+' + nick + r'\b', message.lower()):
-                irc.sendmsg('Hello ' + name + '!', channel)
-
-            if message == '!ping':
-                irc.sendmsg('\1PING 458315181\1', target=name)
-                # TODO set timer and check for response
-
-            if message == exitcode:
-                name = name.lower()
-                if name == adminname or channel.hasmode(name, 'o'):
-                    irc.sendmsg('Bye!', channel)
-                    irc.quit()
-                    exit(0)
 
 
 if __name__ == '__main__':
