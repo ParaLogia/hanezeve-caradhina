@@ -63,6 +63,8 @@ class IRCManager:
         # Join queued channels
         self.channels = {channel: self._joinchannel(channel) for channel in self.joinqueue}
 
+        # TODO other on-connect listeners
+
         self.socket.settimeout(0.05)
 
         # Begin loop
@@ -82,6 +84,9 @@ class IRCManager:
 
     def sendmsg(self, msg, target):
         self.socket.send(bytes(f'PRIVMSG {target} :{msg}\r\n', 'UTF-8'))
+
+    def sendnotice(self, msg, target):
+        self.socket.send(bytes(f'NOTICE {target} :{msg}\r\n', 'UTF-8'))
 
     def _updatelinequeue(self):
         try:
