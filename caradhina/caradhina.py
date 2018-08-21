@@ -1,5 +1,5 @@
 import socket
-from functools import wraps
+from functools import update_wrapper
 from queue import Queue, Empty
 from time import sleep
 import logging
@@ -44,7 +44,7 @@ class IRCManager:
 
     def connect(self):
         self.socket.connect((self.server, self.port))
-        self.socket.send(bytes('NICK {0}\r\n'.format(self.nick), 'UTF-8'))
+        self.socket.send(bytes(f'NICK {self.nick}\r\n', 'UTF-8'))
         self.socket.send(bytes('USER {0} {0} {0} {0}\r\n'.format(self.nick), 'UTF-8'))
 
     def joinchannel(self, channel):
@@ -53,10 +53,10 @@ class IRCManager:
         return session
 
     def pong(self, msg):
-        self.socket.send(bytes('PONG :{0}\r\n'.format(msg), 'UTF-8'))
+        self.socket.send(bytes(f'PONG :{msg}\r\n', 'UTF-8'))
 
     def sendmsg(self, msg, target):
-        self.socket.send(bytes('PRIVMSG {0} :{1}\r\n'.format(target, msg), 'UTF-8'))
+        self.socket.send(bytes(f'PRIVMSG {target} :{msg}\r\n', 'UTF-8'))
 
     def _updatelinequeue(self):
         try:
@@ -103,13 +103,15 @@ class IRCManager:
                 pass
 
     def listen(self, *calls):
-        def decorator(listener):
-            return Listener(listener, calls, self)
+        def decorator(func):
+            listener = Listener(func, calls, self)
+            update_wrapper(listener, func)
+            return listener
         return decorator
 
     def quit(self, message='Leaving'):
         # NOTE: Message doesn't seem to work
-        self.socket.send(bytes('QUIT :{0}\r\n'.format(message), 'UTF-8'))
+        self.socket.send(bytes(f'QUIT :{message}\r\n', 'UTF-8'))
 
 
 class Listener:
