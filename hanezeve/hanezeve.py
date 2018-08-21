@@ -2,7 +2,7 @@ import datetime
 import re
 from time import sleep
 import logging
-from caradhina.caradhina import IRCManager
+from caradhina.caradhina import IRCManager, usermodes
 from caradhina import events
 
 
@@ -28,8 +28,8 @@ def setloggerhandler():
 
 def main():
     nick = 'hanezeve'
-    server = 'irc.choopa.net'
-    # server = 'chat.freenode.net'
+    # server = 'irc.choopa.net'
+    server = 'chat.freenode.net'
     port = 6667
     chan_name = '#paratest'
     adminname = 'paralogia'
@@ -61,10 +61,6 @@ def main():
         if greetingpattern.match(message.lower()):
             irc.sendmsg(f'Hello {name}!', context)
 
-        if message == '!ping':
-            irc.sendmsg('\1PING 458315181\1', target=name)
-            # TODO set timer and check for response
-
         if message == '!stop':
             name = name.lower()
             if name == adminname or context is channel and channel.hasmode(name, 'o'):
@@ -72,10 +68,25 @@ def main():
                 irc.quit()
                 exit(0)
 
+        elif message == '!ping':
+            irc.sendmsg('\1PING 458315181\1', target=name)
+            # TODO set timer and check for response
+
+    @irc.listen(events.MODE)
+    def modelistener(event):
+        channel, modes = event.channel, event.modes
+        change, modes = modes[0], modes[1:]
+        for mode in modes:
+            if mode in usermodes:
+                name = event.param
+                if name == irc.nick:
+                    if change == '+':
+                        irc.sendmsg('My power grows!', channel)
+                    elif change == '-':
+                        irc.sendmsg("No!!! My powerrr...", channel)
+
     irc.join_on_launch(chan_name)
     irc.launch()
-
-
 
 
 if __name__ == '__main__':
